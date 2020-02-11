@@ -3,11 +3,11 @@ This is an example of using the k-nearest-neighbors (KNN) algorithm for face rec
 
 When should I use this example?
 This example is useful when you wish to recognize a large set of known people,
-and make a prediction for an unknown person in a feasible computation time.
+and make a prediction for an Unknown Person person in a feasible computation time.
 
 Algorithm Description:
 The knn classifier is first trained on a set of labeled (known) faces and can then predict the person
-in an unknown image by finding the k most similar faces (images with closet face-features under eucledian distance)
+in an Unknown Person image by finding the k most similar faces (images with closet face-features under eucledian distance)
 in its training set, and performing a majority vote (possibly weighted) on their label.
 
 For example, if k=3, and the three closest face images to the given image in the training set are one image of Biden
@@ -23,7 +23,7 @@ Usage:
 2. Then, call the 'train' function with the appropriate parameters. Make sure to pass in the 'model_save_path' if you
    want to save the model to disk so you can re-use the model without having to re-train it.
 
-3. Call 'predict' and pass in your trained model to recognize the people in an unknown image.
+3. Call 'predict' and pass in your trained model to recognize the people in an Unknown Person image.
 
 NOTE: This example requires scikit-learn to be installed! You can install it with pip:
 
@@ -42,6 +42,8 @@ import face_recognition
 from face_recognition.face_recognition_cli import image_files_in_folder
 import pyttsx3
 import time
+from app import Log,db
+
 
 engine=pyttsx3.init()
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -121,9 +123,9 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.5):
     :param knn_clf: (optional) a knn classifier object. if not specified, model_save_path must be specified.
     :param model_path: (optional) path to a pickled knn classifier. if not specified, model_save_path must be knn_clf.
     :param distance_threshold: (optional) distance threshold for face classification. the larger it is, the more chance
-           of mis-classifying an unknown person as a known one.
+           of mis-classifying an Unknown Person person as a known one.
     :return: a list of names and face locations for the recognized faces in the image: [(name, bounding box), ...].
-        For faces of unrecognized persons, the name 'unknown' will be returned.
+        For faces of unrecognized persons, the name 'Unknown Person' will be returned.
     """
 
     if knn_clf is None and model_path is None:
@@ -150,7 +152,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.5):
     are_matches = [closest_distances[0][i][0] <= distance_threshold for i in range(len(X_face_locations))]
 
     # Predict classes and remove classifications that aren't within the threshold
-    return [(pred, loc) if rec else ("unknown", loc) for pred, loc, rec in zip(knn_clf.predict(faces_encodings), X_face_locations, are_matches)]
+    return [(pred, loc) if rec else ("Unknown Person", loc) for pred, loc, rec in zip(knn_clf.predict(faces_encodings), X_face_locations, are_matches)]
 
 
 def show_prediction_labels_on_image(img_path, predictions):
@@ -187,13 +189,13 @@ def show_prediction_labels_on_image(img_path, predictions):
 if __name__ == "__main__":
     # STEP 1: Train the KNN classifier and save it to disk
     # Once the model is trained and saved, you can skip this step next time.
-    print("Training KNN classifier...")
+    #print("Training KNN classifier...")
     classifier = train("knn_examples/train", model_save_path="trained_knn_model.clf", n_neighbors=3) #MODEL IS HERE
-    print("Training complete!")
+    #print("Training complete!")
     video_capture = cv2.VideoCapture(0)
     #cv2.waitKey(50)
     ctr=0
-    # STEP 2: Using the trained classifier, make predictions for unknown images
+    # STEP 2: Using the trained classifier, make predictions for Unknown Person images
     while True:
     # Grab a single frame of video
         
@@ -208,19 +210,27 @@ if __name__ == "__main__":
         face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
         for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
             predictions = predict(frame, model_path="trained_knn_model.clf")
-            
+            multiple_names=""
             for name, (top, right, bottom, left) in predictions:
-                if(name=="unknown"):
+                if(name=="Unknown Person"):
                     ctr=ctr+1
                     
-                if(ctr<=1 and name=="unknown"):
-                    print('unknown recalculating')
+                if(ctr<=1 and name=="Unknown Person"):
+                    print('Unknown Person recalculating')
                     continue
                 ctr=0
+                complete_name=name.split(' ')
+                user=Log(first_name=complete_name[0],last_name=complete_name[1])
+                db.session.add(user)
+                db.session.commit()
                 print("- Found {} at ({}, {})".format(name, left, top))
-                engine.say("Welcome to The Blockchain Lab "+ name)
-                engine.runAndWait()
-            time.sleep(1)
+                if(len(predictions)==1):
+                    multiple_names=name
+                else:
+                    multiple_names=multiple_names + ' and ' + name
+            engine.say("Welcome to The Blockchain Lab "+ multiple_names)
+            engine.runAndWait()    
+            time.sleep(2)
                 #cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
 
         # Draw a label with a name below the face
