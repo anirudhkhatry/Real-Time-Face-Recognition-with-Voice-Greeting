@@ -181,8 +181,17 @@ def log_page():
     end_date = request.args.get('end_date')
     start_ts = datetime.timestamp(datetime.strptime(start_date,'%d-%m-%Y')) 
     end_ts = datetime.timestamp(datetime.strptime(end_date,'%d-%m-%Y'))
+
+    #all_users = Log.query.all()
+    print(datetime.fromtimestamp(start_ts))
+    print(datetime.fromtimestamp(end_ts))
     all_users = Log.query.filter(Log.time_stamp>=start_ts,Log.time_stamp<=end_ts)
-    return render_template('logpage.html',list=all_users)
+    new_list = list()
+    for user in all_users:
+        user.time_stamp = str(datetime.fromtimestamp(user.time_stamp))
+        new_list.append(user)
+
+    return render_template('logpage.html',list=new_list)
 
 
 if (__name__=='__main__'):
