@@ -30,8 +30,9 @@ NOTE: This example requires scikit-learn to be installed! You can install it wit
 $ pip3 install scikit-learn
 
 """
-
+import scipy
 import math
+import dlib
 import cv2
 from sklearn import neighbors
 import os
@@ -39,10 +40,13 @@ import os.path
 import pickle
 from PIL import Image, ImageDraw
 import face_recognition
+import pyttsx3
 from face_recognition.face_recognition_cli import image_files_in_folder
-
+import time
+import numpy as np
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
+engine=pyttsx3.init()
 
 
 def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree', verbose=False):
@@ -83,7 +87,7 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
         for img_path in image_files_in_folder(os.path.join(train_dir, class_dir)):
             image = face_recognition.load_image_file(img_path)
             face_bounding_boxes = face_recognition.face_locations(image)
-
+            
             if len(face_bounding_boxes) != 1:
                 # If there are no people (or too many people) in a training image, skip the image.
                 if verbose:
@@ -111,7 +115,99 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
     return knn_clf
 
 
-def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.6):
+def train2(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree', verbose=False):
+    """
+    Trains a k-nearest neighbors classifier for face recognition.
+
+    :param train_dir: directory that contains a sub-directory for each known person, with its name.
+
+     (View in source co
+     
+     
+     
+     de to see train_dir example tree structure)
+
+     Structure:
+        <train_dir>/
+        ├── <person1>/
+        │   ├── <somename1>.jpeg
+        │   ├── <somename2>.jpeg
+        │   ├── ...
+        ├── <person2>/
+        │   ├── <somename1>.jpeg
+        │   └── <somename2>.jpeg
+        └── ...
+
+
+    :param model_save_path: (optional) path to save model on disk
+    :param n_neighbors: (optional) number of neighbors to weigh in classification. Chosen automatically if not specified
+    :param knn_algo: (optional) underlying data structure to support knn.default is ball_tree
+    :param verbose: verbosity of training
+    :return: returns knn classifier that was trained on the given data.
+    """
+    X = []
+    y = []
+    
+    
+    
+    
+    
+    #shape_predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+    # Get the face recognition model
+    # This is what gives us the face encodings (numbers that identify the face of a particular person)
+    #face_recognition_model = dlib.face_recognition_model_v1('dlib_face_recognition_resnet_model_v1.dat')
+    #face_detector = dlib.get_frontal_face_detector()
+
+
+
+
+
+    # Loop through each person in the training set
+    for class_dir in os.listdir(train_dir):
+        if not os.path.isdir(os.path.join(train_dir, class_dir)):
+            continue
+
+        # Loop through each training image for the current person
+        for img_path in image_files_in_folder(os.path.join(train_dir, class_dir)):
+            image = face_recognition.load_image_file(img_path)
+            face_bounding_boxes = face_recognition.face_locations(image)
+            
+            detected_faces = face_detector(image, 1)
+            # Get pose/landmarks of those faces
+            # Will be used as an input to the function that computes face encodings
+            # This allows the neural network to be able to produce similar numbers for faces of the same people, regardless of camera angle and/or face positioning in the image
+            shapes_faces = [shape_predictor(image, face) for face in detected_faces]
+            # For every face detected, compute the face encodings
+            face_enc=[np.array(face_recognition_model.compute_face_descriptor(image, face_pose, 1)) for face_pose in shapes_faces]
+
+            if len(face_bounding_boxes) != 1:
+                # If there are no people (or too many people) in a training image, skip the image.
+                if verbose:
+                    print("Image {} not suitable for training: {}".format(img_path, "Didn't find a face" if len(face_bounding_boxes) < 1 else "Found more than one face"))
+            else:
+                # Add face encoding for current image to the training set
+                X.append(face_enc)
+                y.append(class_dir)
+
+    # Determine how many neighbors to use for weighting in the KNN classifier
+    if n_neighbors is None:
+        n_neighbors = int(round(math.sqrt(len(X))))
+        if verbose:
+            print("Chose n_neighbors automatically:", n_neighbors)
+
+    # Create and train the KNN classifier
+    knn_clf = neighbors.KNeighborsClassifier(n_neighbors=n_neighbors, algorithm=knn_algo, weights='distance')
+    knn_clf.fit(X, y)
+
+    # Save the trained KNN classifier
+    if model_save_path is not None:
+        with open(model_save_path, 'wb') as f:
+            pickle.dump(knn_clf, f)
+
+    return knn_clf
+
+
+def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.5):
     """
     Recognizes faces in given image using a trained KNN classifier
 
@@ -123,7 +219,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.6):
     :return: a list of names and face locations for the recognized faces in the image: [(name, bounding box), ...].
         For faces of unrecognized persons, the name 'unknown' will be returned.
     """
-
+    
     if knn_clf is None and model_path is None:
         raise Exception("Must supply knn classifier either thourgh knn_clf or model_path")
 
@@ -144,7 +240,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.6):
     faces_encodings = face_recognition.face_encodings(X_img, known_face_locations=X_face_locations)
 
     # Use the KNN model to find the best matches for the test face
-    closest_distances = knn_clf.kneighbors(faces_encodings, n_neighbors=1)
+    closest_distances = knn_clf.kneighbors(faces_encodings, n_neighbors=3)
     are_matches = [closest_distances[0][i][0] <= distance_threshold for i in range(len(X_face_locations))]
 
     # Predict classes and remove classifications that aren't within the threshold
@@ -190,33 +286,66 @@ if __name__ == "__main__":
     print("Training complete!")
     video_capture = cv2.VideoCapture(0)
     #cv2.waitKey(50)
+    
+    
+    
+    shape_predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+    # Get the face recognition model
+    # This is what gives us the face encodings (numbers that identify the face of a particular person)
+    face_recognition_model = dlib.face_recognition_model_v1('dlib_face_recognition_resnet_model_v1.dat')
+    face_detector = dlib.get_frontal_face_detector()
 
+    
+    
+    
+    
+    
     # STEP 2: Using the trained classifier, make predictions for unknown images
     while True:
     # Grab a single frame of video
         
         ret, frame = video_capture.read()
         
-    # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-        rgb_frame = frame[:, :, ::-1]
+        # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
+        
+        rgb_frame =frame[:, :, ::-1] 
+
+
+        image = frame
+        # Detect faces using the face detector
+        detected_faces = face_detector(image, 1)
+        # Get pose/landmarks of those faces
+        # Will be used as an input to the function that computes face encodings
+        # This allows the neural network to be able to produce similar numbers for faces of the same people, regardless of camera angle and/or face positioning in the image
+        shapes_faces = [shape_predictor(image, face) for face in detected_faces]
+        # For every face detected, compute the face encodings
+        face_en=[np.array(face_recognition_model.compute_face_descriptor(image, face_pose, 1)) for face_pose in shapes_faces]
+
 
     # Find all the faces and face enqcodings in the frame of video
         face_locations = face_recognition.face_locations(rgb_frame)
-        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-        for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+        #face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        for (top, right, bottom, left), face_encoding in zip(face_locations, face_en):
             predictions = predict(frame, model_path="trained_knn_model.clf")
-
+            name_list=[]
             for name, (top, right, bottom, left) in predictions:
+                name_list.append(name)
                 print("- Found {} at ({}, {})".format(name, left, top))
-                #cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
-
+                #engine.say('welcome to the blockchain lab'+name)
+                #engine.runAndWait()
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+            #listToStr = 'and'.join(map(str, name_list))
+            #engine.say('welcome to the blockchain lab'+listToStr)
+            #engine.runAndWait()
+                
+            #time.sleep(5)
         # Draw a label with a name below the face
-            #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
-            #font = cv2.FONT_HERSHEY_DUPLEX
-            #cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
+            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+            font = cv2.FONT_HERSHEY_DUPLEX
+            cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
     # Display the resulting image
-        #cv2.imshow('Video', frame)
+        cv2.imshow('Video', frame)
 
     # Hit 'q' on the keyboard to quit!
         if cv2.waitKey(1) & 0xFF == ord('q'):
