@@ -112,6 +112,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.53):
     X_face_locations = face_recognition.face_locations(X_img,number_of_times_to_upsample = 2)
 
     # If no faces are found in the image, return an empty result.
+
     if len(X_face_locations) == 0:
         return []
 
@@ -123,7 +124,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.53):
     are_matches = [closest_distances[0][i][0] <= distance_threshold for i in range(len(X_face_locations))]
 
     # Predict classes and remove classifications that aren't within the threshold
-    return [(pred, loc) if rec else ("unknown", loc) for pred, loc, rec in zip(knn_clf.predict(faces_encodings), X_face_locations, are_matches)]
+    return [(pred, loc) if rec else ("unknown person", loc) for pred, loc, rec in zip(knn_clf.predict(faces_encodings), X_face_locations, are_matches)]
 
 set_old = set()
 
@@ -162,9 +163,11 @@ def start_detecting():
     
     video_capture = cv2.VideoCapture(0)
     
-    schedule.every(1).minutes.do(flush_set)
+    schedule.every(0.3).minutes.do(flush_set)
     global set_old
     while True:
+
+        schedule.run_pending()
 
         ret, frame = video_capture.read()
         rgb_frame =frame[:, :, ::-1] 
@@ -176,7 +179,7 @@ def start_detecting():
         face_locations = face_recognition.face_locations(rgb_frame)
 
         predictions = predict(frame, model_path="trained_knn_model.clf")
-
+        print(predictions)
 
         set_new = set()
         set_temp = set()
@@ -201,8 +204,11 @@ def start_detecting():
         #### SPEAKING CODE
         if(len(new_temp)!=0):
             ps = subprocess.Popen(['python', 'speak.py', 'Welcome to the Blockchain Lab '+ lts], stdout=subprocess.PIPE)
-            for name in new_temp:                
+            for name in new_temp: 
+                if name == "unknown":
+                    name = "unknown person"               
                 complete_name=name.split(' ')
+
                 user=Log(first_name=complete_name[0],last_name=complete_name[1])
                 db.session.add(user)
                 db.session.commit()
