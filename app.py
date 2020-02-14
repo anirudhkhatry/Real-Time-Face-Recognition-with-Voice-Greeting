@@ -5,7 +5,26 @@ from camera import VideoCamera
 from datetime import datetime
 import time,os,shutil,glob
 from training import train
+from face_recognition_knn import recognize
 
+
+import scipy
+import math
+import dlib
+import cv2
+from sklearn import neighbors
+import os
+import os.path
+import pickle
+from PIL import Image, ImageDraw
+import face_recognition
+import pyttsx3
+from face_recognition.face_recognition_cli import image_files_in_folder
+import time
+import numpy as np
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+val = True
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -75,6 +94,10 @@ def home_page():
 
 @app.route('/enroll')
 def enroll_page():
+    global val
+    print("Enroll clicked")
+    val = False
+    
     return render_template('enrollpage.html')
 @app.route('/identify')
 def identify_page():
@@ -84,6 +107,19 @@ def identify_page():
 @app.route('/start_detecting',methods=['GET'])
 def start_detecting():
     print("Something")
+    shape_predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+    face_recognition_model = dlib.face_recognition_model_v1('dlib_face_recognition_resnet_model_v1.dat')
+    face_detector = dlib.get_frontal_face_detector()
+    video_capture = cv2.VideoCapture(0)
+    
+    while True:
+        global val
+        val = recognize(video_capture,shape_predictor,face_detector,face_recognition_model)
+        if val == False:
+            print("Recognition broken")
+            break
+    video_capture.release()
+    cv2.destroyAllWindows()
     return '<h1>Hey!</h1>'
 
 

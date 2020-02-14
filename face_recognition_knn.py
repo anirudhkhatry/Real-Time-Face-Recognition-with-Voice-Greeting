@@ -43,6 +43,7 @@ import face_recognition
 import pyttsx3
 from face_recognition.face_recognition_cli import image_files_in_folder
 import time
+import subprocess
 import numpy as np
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
@@ -77,12 +78,13 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
     """
     X = []
     y = []
-
+    total_no=len(os.listdir(train_dir))
+    ctr=1
     # Loop through each person in the training set
     for class_dir in os.listdir(train_dir):
         if not os.path.isdir(os.path.join(train_dir, class_dir)):
             continue
-
+        print(str(ctr/total_no*100)+' percent is done ')
         # Loop through each training image for the current person
         for img_path in image_files_in_folder(os.path.join(train_dir, class_dir)):
             image = face_recognition.load_image_file(img_path)
@@ -94,7 +96,7 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
                     print("Image {} not suitable for training: {}".format(img_path, "Didn't find a face" if len(face_bounding_boxes) < 1 else "Found more than one face"))
             else:
                 # Add face encoding for current image to the training set
-                X.append(face_recognition.face_encodings(image, known_face_locations=face_bounding_boxes)[0])
+                X.append(face_recognition.face_encodings(image, known_face_locations=face_bounding_boxes,num_jitters=5)[0])
                 y.append(class_dir)
 
     # Determine how many neighbors to use for weighting in the KNN classifier
@@ -207,7 +209,7 @@ def train2(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tre
     return knn_clf
 
 
-def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.5):
+def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.53):
     """
     Recognizes faces in given image using a trained KNN classifier
 
@@ -230,7 +232,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.5):
 
     # Load image file and find face locations
     X_img = X_img_path
-    X_face_locations = face_recognition.face_locations(X_img)
+    X_face_locations = face_recognition.face_locations(X_img,number_of_times_to_upsample = 2)
 
     # If no faces are found in the image, return an empty result.
     if len(X_face_locations) == 0:
@@ -277,80 +279,84 @@ def show_prediction_labels_on_image(img_path, predictions):
     # Display the resulting image
     pil_image.show()
 
+def recognize(video_capture,shape_predictor,face_detector,face_recognition_model):
+    ret, frame = video_capture.read()
+    rgb_frame =frame[:, :, ::-1] 
+    image = frame
+
+    print("Frame taken")
+    # Detect faces using the face detector
+    detected_faces = face_detector(image, 1)
+    # Get pose/landmarks of those faces
+    # Will be used as an input to the function that computes face encodings
+    # This allows the neural network to be able to produce similar numbers for faces of the same people, regardless of camera angle and/or face positioning in the image
+    shapes_faces = [shape_predictor(image, face) for face in detected_faces]
+    # For every face detected, compute the face encodings
+    face_en=[np.array(face_recognition_model.compute_face_descriptor(image, face_pose, 1)) for face_pose in shapes_faces]
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)#converting to gray
+    # Find all the faces and face enqcodings in the frame of video
+    face_locations = face_recognition.face_locations(gray)
+    #face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+    mul_name_list=[]
+    for (top, right, bottom, left), face_encoding in zip(face_locations, face_en):
+        predictions = predict(frame, model_path="trained_knn_model.clf")
+        name_list=[]
+        for name, (top, right, bottom, left) in predictions:
+            name_list.append(name)
+            print("- Found {} at ({}, {})".format(name, left, top))
+            print('\n \n')
+            #engine.say('welcome to the blockchain lab'+name)
+            #engine.runAndWait()
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+        #listToStr = 'and'.join(map(str, name_list))
+        #engine.say('welcome to the blockchain lab'+listToStr)
+        #engine.runAndWait()
+            
+        #time.sleep(5)
+    # Draw a label with a name below the face
+            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+            font = cv2.FONT_HERSHEY_DUPLEX
+            cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
+
+            complete_name=name.split(' ')
+            # user=Log(first_name=complete_name[0],last_name=complete_name[1])
+            # db.session.add(user)
+            # db.session.commit()
+            mul_name_list.append(name)
+
+        lts=' and '.join(map(str,mul_name_list))
+        print('welcome to the blockchain lab'+lts) 
+
+        if(len(lts)!=0):
+            ps = subprocess.Popen(['python', 'speak.py', 'Welcome to the Blockchain Lab '+ lts], stdout=subprocess.PIPE)
+    # Display the resulting image
+        cv2.imshow('Video', gray)
+
+    # Hit 'q' on the keyboard to quit!
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            return False
+
+
+    return True
 
 if __name__ == "__main__":
     # STEP 1: Train the KNN classifier and save it to disk
     # Once the model is trained and saved, you can skip this step next time.
     print("Training KNN classifier...")
-    classifier = train("knn_examples/train", model_save_path="trained_knn_model.clf", n_neighbors=3)
+    #classifier = train("knn_examples/train", model_save_path="trained_knn_model.clf", n_neighbors=3) #Model is here
     print("Training complete!")
-    video_capture = cv2.VideoCapture(0)
-    #cv2.waitKey(50)
-    
-    
-    
     shape_predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
-    # Get the face recognition model
-    # This is what gives us the face encodings (numbers that identify the face of a particular person)
     face_recognition_model = dlib.face_recognition_model_v1('dlib_face_recognition_resnet_model_v1.dat')
     face_detector = dlib.get_frontal_face_detector()
-
-    
-    
-    
-    
-    
-    # STEP 2: Using the trained classifier, make predictions for unknown images
+    video_capture = cv2.VideoCapture(0)
     while True:
-    # Grab a single frame of video
-        
-        ret, frame = video_capture.read()
-        
-        # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-        
-        rgb_frame =frame[:, :, ::-1] 
-
-
-        image = frame
-        # Detect faces using the face detector
-        detected_faces = face_detector(image, 1)
-        # Get pose/landmarks of those faces
-        # Will be used as an input to the function that computes face encodings
-        # This allows the neural network to be able to produce similar numbers for faces of the same people, regardless of camera angle and/or face positioning in the image
-        shapes_faces = [shape_predictor(image, face) for face in detected_faces]
-        # For every face detected, compute the face encodings
-        face_en=[np.array(face_recognition_model.compute_face_descriptor(image, face_pose, 1)) for face_pose in shapes_faces]
-
-
-    # Find all the faces and face enqcodings in the frame of video
-        face_locations = face_recognition.face_locations(rgb_frame)
-        #face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-        for (top, right, bottom, left), face_encoding in zip(face_locations, face_en):
-            predictions = predict(frame, model_path="trained_knn_model.clf")
-            name_list=[]
-            for name, (top, right, bottom, left) in predictions:
-                name_list.append(name)
-                print("- Found {} at ({}, {})".format(name, left, top))
-                #engine.say('welcome to the blockchain lab'+name)
-                #engine.runAndWait()
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
-            #listToStr = 'and'.join(map(str, name_list))
-            #engine.say('welcome to the blockchain lab'+listToStr)
-            #engine.runAndWait()
-                
-            #time.sleep(5)
-        # Draw a label with a name below the face
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
-            font = cv2.FONT_HERSHEY_DUPLEX
-            cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
-
-    # Display the resulting image
-        cv2.imshow('Video', frame)
-
-    # Hit 'q' on the keyboard to quit!
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        val = recognize(video_capture,shape_predictor,face_detector,face_recognition_model)
+        if val == False:
             break
+    video_capture.release()
+    cv2.destroyAllWindows()
 
-# Release handle to the webcam
-video_capture.release()
-cv2.destroyAllWindows()
+
+
+
