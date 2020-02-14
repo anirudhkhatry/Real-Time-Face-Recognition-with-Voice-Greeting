@@ -6,8 +6,8 @@ from datetime import datetime
 import time,os,shutil,glob
 from training import train
 from face_recognition_knn import recognize
-
-
+import subprocess
+import schedule,time
 import scipy
 import math
 import dlib
@@ -20,7 +20,6 @@ from PIL import Image, ImageDraw
 import face_recognition
 import pyttsx3
 from face_recognition.face_recognition_cli import image_files_in_folder
-import time
 import numpy as np
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
@@ -87,6 +86,55 @@ db.create_all()
 video_camera = None
 global_frame = None
 
+def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.53):
+    """
+    Recognizes faces in given image using a trained KNN classifier
+
+    :param X_img_path: path to image to be recognized
+    :param knn_clf: (optional) a knn classifier object. if not specified, model_save_path must be specified.
+    :param model_path: (optional) path to a pickled knn classifier. if not specified, model_save_path must be knn_clf.
+    :param distance_threshold: (optional) distance threshold for face classification. the larger it is, the more chance
+           of mis-classifying an unknown person as a known one.
+    :return: a list of names and face locations for the recognized faces in the image: [(name, bounding box), ...].
+        For faces of unrecognized persons, the name 'unknown' will be returned.
+    """
+    
+    if knn_clf is None and model_path is None:
+        raise Exception("Must supply knn classifier either thourgh knn_clf or model_path")
+
+    # Load a trained KNN model (if one was passed in)
+    if knn_clf is None:
+        with open(model_path, 'rb') as f:
+            knn_clf = pickle.load(f)
+
+    # Load image file and find face locations
+    X_img = X_img_path
+    X_face_locations = face_recognition.face_locations(X_img,number_of_times_to_upsample = 2)
+
+    # If no faces are found in the image, return an empty result.
+    if len(X_face_locations) == 0:
+        return []
+
+    # Find encodings for faces in the test iamge
+    faces_encodings = face_recognition.face_encodings(X_img, known_face_locations=X_face_locations)
+
+    # Use the KNN model to find the best matches for the test face
+    closest_distances = knn_clf.kneighbors(faces_encodings, n_neighbors=3)
+    are_matches = [closest_distances[0][i][0] <= distance_threshold for i in range(len(X_face_locations))]
+
+    # Predict classes and remove classifications that aren't within the threshold
+    return [(pred, loc) if rec else ("unknown", loc) for pred, loc, rec in zip(knn_clf.predict(faces_encodings), X_face_locations, are_matches)]
+
+set_old = set()
+
+def flush_set():
+    global set_old
+    print("Flushing")
+    print(set_old)
+    set_old.clear()
+    print("Flushed")
+    print(set_old)
+
 
 @app.route('/')
 def home_page():
@@ -112,12 +160,66 @@ def start_detecting():
     face_detector = dlib.get_frontal_face_detector()
     video_capture = cv2.VideoCapture(0)
     
+    video_capture = cv2.VideoCapture(0)
+    
+    schedule.every(1).minutes.do(flush_set)
+    global set_old
     while True:
-        global val
-        val = recognize(video_capture,shape_predictor,face_detector,face_recognition_model)
-        if val == False:
-            print("Recognition broken")
+
+        ret, frame = video_capture.read()
+        rgb_frame =frame[:, :, ::-1] 
+        
+
+        print("Frame taken")
+
+        detected_faces = face_detector(rgb_frame, 1)
+        face_locations = face_recognition.face_locations(rgb_frame)
+
+        predictions = predict(frame, model_path="trained_knn_model.clf")
+
+
+        set_new = set()
+        set_temp = set()
+        for name, (top, right, bottom, left) in predictions:
+            
+            print("- Found {} at ({}, {})".format(name, left, top))
+            print('\n \n')
+            #engine.say('welcome to the blockchain lab'+name)
+            #engine.runAndWait()
+            set_new.add(name)
+
+        print("Old and new sets")
+        print(set_old)
+        print(set_new)
+        temp = set_new.difference(set_old)
+        print(temp)
+        new_temp = list(temp)
+        print("Final list")
+        print(new_temp)
+        lts=' and '.join(map(str,new_temp))
+        set_old = set_new
+        #### SPEAKING CODE
+        if(len(new_temp)!=0):
+            ps = subprocess.Popen(['python', 'speak.py', 'Welcome to the Blockchain Lab '+ lts], stdout=subprocess.PIPE)
+            for name in new_temp:                
+                complete_name=name.split(' ')
+                user=Log(first_name=complete_name[0],last_name=complete_name[1])
+                db.session.add(user)
+                db.session.commit()
+            
+
+
+        #print('welcome to the blockchain lab'+lts) 
+
+
+        # Display the resulting image
+        #cv2.imshow('Video', rgb_frame)
+
+        # Hit 'q' on the keyboard to quit!
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+    set_old.clear()
     video_capture.release()
     cv2.destroyAllWindows()
     return '<h1>Hey!</h1>'
