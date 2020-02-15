@@ -30,7 +30,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 
 user_first_name=None
-user_last_name=None 
+user_last_name=None
 user_timestamp=None
 
 
@@ -80,7 +80,7 @@ class Log(db.Model):
         return f"{self.id},{self.time_stamp}, {self.first_name} {self.last_name}"
 
 
-db.create_all() 
+db.create_all()
 
 
 video_camera = None
@@ -98,7 +98,7 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.53):
     :return: a list of names and face locations for the recognized faces in the image: [(name, bounding box), ...].
         For faces of unrecognized persons, the name 'unknown' will be returned.
     """
-    
+
     if knn_clf is None and model_path is None:
         raise Exception("Must supply knn classifier either thourgh knn_clf or model_path")
 
@@ -146,7 +146,7 @@ def enroll_page():
     global val
     print("Enroll clicked")
     val = False
-    
+
     return render_template('enrollpage.html')
 @app.route('/identify')
 def identify_page():
@@ -155,25 +155,27 @@ def identify_page():
 
 @app.route('/start_detecting',methods=['GET'])
 def start_detecting():
-    print("Something")
+    #print("Something")
     shape_predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
     face_recognition_model = dlib.face_recognition_model_v1('dlib_face_recognition_resnet_model_v1.dat')
     face_detector = dlib.get_frontal_face_detector()
     video_capture = cv2.VideoCapture(0)
-    
+
     video_capture = cv2.VideoCapture(0)
-    
+
     schedule.every(0.3).minutes.do(flush_set)
     global set_old
-    while True:
+    global val
+    val = True
+    while val==True:
 
         schedule.run_pending()
 
         ret, frame = video_capture.read()
-        rgb_frame =frame[:, :, ::-1] 
-        
+        rgb_frame =frame[:, :, ::-1]
 
-        print("Frame taken")
+
+        #print("Frame taken")
 
         detected_faces = face_detector(rgb_frame, 1)
         face_locations = face_recognition.face_locations(rgb_frame)
@@ -184,38 +186,39 @@ def start_detecting():
         set_new = set()
         set_temp = set()
         for name, (top, right, bottom, left) in predictions:
-            
+
             print("- Found {} at ({}, {})".format(name, left, top))
             print('\n \n')
             #engine.say('welcome to the blockchain lab'+name)
             #engine.runAndWait()
             set_new.add(name)
 
-        print("Old and new sets")
+        '''print("Old and new sets")
         print(set_old)
-        print(set_new)
+        print(set_new)'''
         temp = set_new.difference(set_old)
-        print(temp)
+        #print(temp)
         new_temp = list(temp)
-        print("Final list")
-        print(new_temp)
+        #print("Final list")
+        #print(new_temp)
         lts=' and '.join(map(str,new_temp))
         set_old = set_new
         #### SPEAKING CODE
         if(len(new_temp)!=0):
-            ps = subprocess.Popen(['python', 'speak.py', 'Welcome to the Blockchain Lab '+ lts], stdout=subprocess.PIPE)
-            for name in new_temp: 
-                if name == "unknown":
-                    name = "unknown person"               
+            ps = subprocess.Popen(['python3', 'speak.py', 'Welcome to the Blockchain Lab '+ lts], stdout=subprocess.PIPE)
+            for name in new_temp:
+                if name == "unknown person":
+                    ps = subprocess.Popen(['python3', 'speak.py', 'Please enroll yourselves into the system'], stdout=subprocess.PIPE)
+                    #name = "unknown person"
                 complete_name=name.split(' ')
 
                 user=Log(first_name=complete_name[0],last_name=complete_name[1])
                 db.session.add(user)
                 db.session.commit()
-            
 
 
-        #print('welcome to the blockchain lab'+lts) 
+
+        #print('welcome to the blockchain lab'+lts)
 
 
         # Display the resulting image
@@ -233,7 +236,7 @@ def start_detecting():
 
 @app.route('/record_status', methods=['POST'])
 def record_status():
-    global video_camera 
+    global video_camera
     if video_camera == None:
         video_camera = VideoCamera()
 
@@ -254,7 +257,7 @@ def record_status():
 
 @app.route('/identify_status', methods=['POST'])
 def identify_status():
-    global video_camera 
+    global video_camera
     if video_camera == None:
         video_camera = VideoCamera()
 
@@ -274,12 +277,12 @@ def identify_status():
         return response
 
 def video_stream():
-    global video_camera 
+    global video_camera
     global global_frame
 
     if video_camera == None:
         video_camera = VideoCamera()
-        
+
     while True:
         frame = video_camera.get_frame()
 
@@ -323,7 +326,7 @@ def welcome_page():
 def log_page():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    start_ts = datetime.timestamp(datetime.strptime(start_date,'%d-%m-%Y')) 
+    start_ts = datetime.timestamp(datetime.strptime(start_date,'%d-%m-%Y'))
     end_ts = datetime.timestamp(datetime.strptime(end_date,'%d-%m-%Y'))
 
     #all_users = Log.query.all()
